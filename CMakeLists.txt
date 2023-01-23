@@ -28,7 +28,7 @@ add_dependencies(${PROJECT_NAME}-exe gqlmapiCommon gqlmapi mapi_schema mapistub)
 
 add_custom_command(TARGET ${PROJECT_NAME}-exe POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy
-        ${CMAKE_SOURCE_DIR}/src/asset/index.html ${CMAKE_BINARY_DIR}/app/index.html)
+        ${CMAKE_SOURCE_DIR}/src/asset/graphiql.html ${CMAKE_BINARY_DIR}/app/graphiql.html)
 
 set(CPACK_PROJECT_NAME ${PROJECT_NAME})
 set(CPACK_PROJECT_VERSION ${PROJECT_VERSION})

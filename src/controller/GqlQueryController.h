@@ -23,6 +23,9 @@ public:
              REQUEST(std::shared_ptr<IncomingRequest>, request)
              )
     {
+        // TODO: Decode these URL parameters - oatpp does not do this automatically
+        // when version 1.4.0 is availalable, that has a built-in url decoder
+
         auto query = request->getQueryParameter("query");
         auto variables = request->getQueryParameter("variables");
         auto operationName = request->getQueryParameter("operationName");
@@ -48,7 +51,7 @@ public:
     ADD_CORS(loadGraphiql, "*", "GET");
     ENDPOINT("GET", "/graphiql", loadGraphiql)
     {
-        return createResponse(Status::CODE_200, oatpp::String::loadFromFile("index.html"));
+        return createResponse(Status::CODE_200, oatpp::String::loadFromFile("graphiql.html"));
     }
 
 private:

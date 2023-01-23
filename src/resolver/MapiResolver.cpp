@@ -22,7 +22,7 @@ std::shared_ptr<ResolveResult> MapiResolver::Resolve(std::string query, std::str
     }
     catch (std::exception e)
     {
-        result->errors.push_back(e.what());
+        result->errors.push_back(std::format("Failed to parse query: {}", e.what()));
         return result;
     }
 
