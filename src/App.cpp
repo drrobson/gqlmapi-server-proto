@@ -1,33 +1,31 @@
 #include <iostream>
 
 #include <oatpp/network/Server.hpp>
-#include <oatpp/network/tcp/server/ConnectionProvider.hpp>
-#include <oatpp/parser/json/mapping/ObjectMapper.hpp>
-#include <oatpp/web/server/HttpConnectionHandler.hpp>
 
-#include "controller/GqlQueryController.h"
-#include "resolver/MapiResolver.h"
+#include "AppComponents.h"
+
+#include "transport/http/GqlQueryController.h"
+#include "graphql/MapiResolver.h"
 
 void RunServer()
 {
-    /* Create Router for HTTP requests routing */
-    auto router = oatpp::web::server::HttpRouter::createShared();
+    // Create + register our oatpp app components
+    AppComponent components;
 
-    auto objectMapper = oatpp::parser::json::mapping::ObjectMapper::createShared();
-    auto mapiResolver = MapiResolver::Create(false);
-    router->addController(std::make_shared<GqlQueryController>(objectMapper, mapiResolver));
+    OATPP_COMPONENT(std::shared_ptr<oatpp::data::mapping::ObjectMapper>, apiSerializationUtils);
 
-    /* Create HTTP connection handler with router */
-    auto connectionHandler = oatpp::web::server::HttpConnectionHandler::createShared(router);
+    auto gqlmapiService = graphql::mapi::GetService(false /*useDefaultProfile*/);
+    auto mapiResolver = std::make_shared<MapiResolver>(std::move(gqlmapiService));
+    auto httpController = std::make_shared<GqlQueryController>(apiSerializationUtils, mapiResolver);
 
-    /* Create TCP connection provider */
-    auto connectionProvider = oatpp::network::tcp::server::ConnectionProvider::createShared({"localhost", 8000, oatpp::network::Address::IP_4});
+    OATPP_COMPONENT(std::shared_ptr<oatpp::web::server::HttpRouter>, httpRouter);
+    httpRouter->addController(httpController);
 
-    /* Create server which takes provided TCP connections and passes them to HTTP connection handler */
-    oatpp::network::Server server(connectionProvider, connectionHandler);
+    OATPP_COMPONENT(std::shared_ptr<oatpp::network::ConnectionHandler>, httpConnectionHandler, "httpConnectionHandler");
+    OATPP_COMPONENT(std::shared_ptr<oatpp::network::ServerConnectionProvider>, connectionProvider);
 
-    /* Print info about server port */
-    OATPP_LOGI("GqlMapiServer", "Server running on port %s", connectionProvider->getProperty("port").getData());
+    oatpp::network::Server server(connectionProvider, httpConnectionHandler);
+    OATPP_LOGI("GqlMapiServer", "Server launching on port %s", connectionProvider->getProperty("port").getData());
 
     /* Run server */
     server.run();

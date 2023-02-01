@@ -9,18 +9,24 @@ enable_testing()
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/app)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/app)
 
-find_package(oatpp CONFIG REQUIRED)
-include_directories(${OATPP_INCLUDE_DIRS} gqlmapi/src/include )
+find_package(oatpp 1.3.0 CONFIG REQUIRED)
+find_package(oatpp-websocket 1.3.0 CONFIG REQUIRED)
+include_directories(src ${OATPP_INCLUDE_DIRS} ${OATPP-WEBSOCKET_INCLUDE_DIRS} gqlmapi/src/include )
 
 add_subdirectory(gqlmapi)
 
 add_executable(${PROJECT_NAME}-exe
         src/App.cpp
-        src/controller/GqlQueryController.cpp
-        src/resolver/MapiResolver.cpp)
+        src/graphql/MapiResolver.cpp
+        src/transport/http/GqlQueryController.cpp
+        src/transport/subscription/SubscriptionMessageListener.cpp
+        src/transport/websocket/WSConnectionListener.cpp
+        src/transport/websocket/WSFrameListener.cpp
+        src/transport/websocket/WSMessageDispatcher.cpp)
 
 target_link_libraries(${PROJECT_NAME}-exe
         PRIVATE oatpp::oatpp
+        PRIVATE oatpp::oatpp-websocket
         PRIVATE gqlmapi
         )
 

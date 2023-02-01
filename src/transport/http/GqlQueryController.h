@@ -4,19 +4,32 @@
 #include <oatpp/parser/json/mapping/ObjectMapper.hpp>
 #include <oatpp/web/server/api/ApiController.hpp>
 
-#include "../dto/GqlRequest.h"
-#include "../dto/GqlResponse.h"
-#include "../resolver/IResolver.h"
+#include <oatpp-websocket/Handshaker.hpp>
+
+#include "AppComponents.h"
+#include "graphql/public/IResolver.h"
+#include "transport/schema/GqlRequest.h"
+#include "transport/schema/GqlResponse.h"
+#include "transport/subscription/SubscriptionMessageListener.h"
+#include "transport/websocket/WSConnectionListener.h"
+#include "transport/websocket/WSFrameListener.h"
 
 #include OATPP_CODEGEN_BEGIN(ApiController) //<- Begin Codegen
 
 class GqlQueryController : public oatpp::web::server::api::ApiController
 {
 public:
-    GqlQueryController(std::shared_ptr<oatpp::data::mapping::ObjectMapper> objectMapper, std::shared_ptr<IResolver> resolver)
-        : oatpp::web::server::api::ApiController(objectMapper)
+    GqlQueryController(std::shared_ptr<oatpp::data::mapping::ObjectMapper> apiSerializationUtils, std::shared_ptr<IResolver> resolver)
+        : ApiController(apiSerializationUtils)
+        , m_apiSerializationUtils(apiSerializationUtils)
         , m_resolver(resolver)
-    {}
+    {
+        // Configure the handler for the graphql/subscription endpoint
+        auto frameListenerFactory = std::make_shared<WSFrameListenerFactory>(std::make_shared<SubscriptionMessageListenerFactory>(resolver));
+        auto connectionListener = std::make_shared<WSConnectionListener>(frameListenerFactory);
+        m_wsSubscriptionHandler = oatpp::websocket::AsyncConnectionHandler::createShared();
+        m_wsSubscriptionHandler->setSocketInstanceListener(connectionListener);
+    }
 
     ADD_CORS(executeQueryViaGet, "*", "GET");
     ENDPOINT("GET", "/graphql", executeQueryViaGet,
@@ -40,8 +53,7 @@ public:
              BODY_DTO(Object<GqlQueryRequest>, gqlRequest)
              )
     {
-        auto jsonObjectMapper = oatpp::parser::json::mapping::ObjectMapper::createShared();
-        oatpp::String variables = jsonObjectMapper->writeToString(gqlRequest->variables);
+        oatpp::String variables = m_apiSerializationUtils->writeToString(gqlRequest->variables);
 
         auto responseDto = executeQueryRequest(gqlRequest->query, variables, gqlRequest->operationName);
 
@@ -54,10 +66,21 @@ public:
         return createResponse(Status::CODE_200, oatpp::String::loadFromFile("graphiql.html"));
     }
 
+    ADD_CORS(graphqlSubscription, "*", "GET");
+    ENDPOINT("GET", "/graphql/subscription", graphqlSubscription,
+             REQUEST(std::shared_ptr<IncomingRequest>, request)
+            )
+    {
+        return oatpp::websocket::Handshaker::serversideHandshake(request->getHeaders(), m_wsSubscriptionHandler);
+    }
+
 private:
     oatpp::Object<GqlQueryResponse> executeQueryRequest(oatpp::String query, oatpp::String variables, oatpp::String operationName);
 
+    std::shared_ptr<oatpp::data::mapping::ObjectMapper> m_apiSerializationUtils;
+
     std::shared_ptr<IResolver>  m_resolver;
+    std::shared_ptr<oatpp::websocket::AsyncConnectionHandler> m_wsSubscriptionHandler;
 };
 
 #include OATPP_CODEGEN_END(ApiController) //<- End Codegen

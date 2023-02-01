@@ -18,9 +18,10 @@ oatpp::Object<GqlQueryResponse> GqlQueryController::executeQueryRequest(oatpp::S
     }
     else if (result->document)
     {
-        // Datastore returned a response in resolving our query, parse it out
-        auto jsonObjectMapper = oatpp::parser::json::mapping::ObjectMapper::createShared();
-        return jsonObjectMapper->readFromString<oatpp::Object<GqlQueryResponse>>(result->document.value());
+        // We specifically use the JSON serialization helper (instead of our API helper) because
+        // the IResolver gives us back a JSON document
+        auto jsonSerializationUtils = oatpp::parser::json::mapping::ObjectMapper::createShared();
+        return jsonSerializationUtils->readFromString<oatpp::Object<GqlQueryResponse>>(result->document.value());
     }
     else
     {

@@ -1,11 +1,10 @@
+#pragma once
+
 #include <oatpp/core/macro/codegen.hpp>
 
 /* Begin DTO code-generation */
 #include OATPP_CODEGEN_BEGIN(DTO)
 
-/**
- * Message Data-Transfer-Object
- */
 class GqlQueryResponse : public oatpp::DTO
 {
     DTO_INIT(GqlQueryResponse, DTO /* Extends */)
