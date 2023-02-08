@@ -16,13 +16,13 @@ public:
                             , std::string variables
                             , std::string operationName) override;
 
-    virtual std::shared_ptr<SubscriptionId> Subscribe(
+    virtual std::shared_ptr<SubscriptionKey> Subscribe(
                               std::string query
                             , std::string variables
                             , std::string operationName
                             , std::shared_ptr<ISubscriptionCallbacks> callbacks) override;
 
-    virtual void                            Unsubscribe(const SubscriptionId& id) override;
+    virtual void                            Unsubscribe(const SubscriptionKey& id) override;
 
 private:
     std::shared_ptr<graphql::service::Request> m_gqlmapiService;

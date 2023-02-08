@@ -9,14 +9,17 @@
 #include "transport/websocket/IMessageDispatcher.h"
 
 
-SubscriptionCallbackSink::SubscriptionCallbackSink(std::shared_ptr<IMessageDispatcher> messageChannel, std::function<void(const SubscriptionId& id)> unsubscribeFunc)
-    : m_messageChannel(std::move(messageChannel))
+SubscriptionCallbackSink::SubscriptionCallbackSink(   SubscriptionId subscriptionId
+                                                    , std::shared_ptr<IMessageDispatcher> messageChannel
+                                                    , std::function<void(const SubscriptionId& id)> unsubscribeFunc)
+    : m_subscriptionId(std::move(subscriptionId))
+    , m_messageChannel(std::move(messageChannel))
     , m_unsubscribeFunc(std::move(unsubscribeFunc))
 {}
 
-void SubscriptionCallbackSink::OnRegistered(const SubscriptionId& id)
+void SubscriptionCallbackSink::OnRegistered(const SubscriptionKey& key)
 {
-    m_subscriptionId = id;
+    m_subscriptionKey = key;
     SendSubscriptionMessage("subscription_established", std::nullopt);
 }
 
@@ -35,16 +38,16 @@ void SubscriptionCallbackSink::SendSubscriptionMessage(std::string messageName, 
 {
     auto message = GqlSubscriptionMessage::createShared();
     message->messageName = std::move(messageName);
-    if (m_subscriptionId)
-        message->subscriptionId = *m_subscriptionId;
+    message->subscriptionId = m_subscriptionId;
+
     if (payload)
         message->payload = std::move(payload.value());
 
     if (!m_messageChannel->SendMessage(m_apiObjectMapper->writeToString(message)))
     {
         // If we no longer have a message channel, we should unsubscribe because nobody is listening
-        if (m_subscriptionId)
-            m_unsubscribeFunc(*m_subscriptionId);
+        if (m_subscriptionKey)
+            m_unsubscribeFunc(*m_subscriptionKey);
     }
 }
 
@@ -56,35 +59,35 @@ SubscriptionMessageListener::SubscriptionMessageListener(std::shared_ptr<IResolv
 class BatchUnsubscribeCoroutine : public oatpp::async::Coroutine<BatchUnsubscribeCoroutine>
 {
 public:
-    BatchUnsubscribeCoroutine(std::unordered_set<SubscriptionId> ids, std::shared_ptr<IResolver> resolver)
-        : m_ids(std::move(ids))
+    BatchUnsubscribeCoroutine(std::unordered_map<SubscriptionId, SubscriptionKey> subscriptions, std::shared_ptr<IResolver> resolver)
+        : m_subscriptions(std::move(subscriptions))
         , m_resolver(std::move(resolver))
     {}
 
     virtual Action act() override
     {
-        for (auto& id : m_ids)
+        for (const auto& subscription : m_subscriptions)
         {
-            m_resolver->Unsubscribe(id);
+            m_resolver->Unsubscribe(subscription.second);
         }
 
         return finish();
     }
 
 private:
-    std::unordered_set<SubscriptionId> m_ids;
+    std::unordered_map<SubscriptionId, SubscriptionKey> m_subscriptions;
     std::shared_ptr<IResolver> m_resolver;
 };
 
 void SubscriptionMessageListener::OnChannelClosed(std::string closingMessage)
 {
-    std::unordered_set<SubscriptionId> activeSubscriptionIds;
+    std::unordered_map<SubscriptionId, SubscriptionKey> activeSubscriptions;
     {
-        std::lock_guard<std::mutex> lock(m_activeSubscriptionIdsLock);
-        activeSubscriptionIds = std::move(m_activeSubscriptionIds);
+        std::lock_guard<std::mutex> lock(m_activeSubscriptionsLock);
+        activeSubscriptions = std::move(m_activeSubscriptions);
     }
 
-    m_asyncExecutor->execute<BatchUnsubscribeCoroutine>(std::move(activeSubscriptionIds), m_resolver);
+    m_asyncExecutor->execute<BatchUnsubscribeCoroutine>(std::move(activeSubscriptions), m_resolver);
 }
 
 void SubscriptionMessageListener::OnNextMessage(std::string message, const std::shared_ptr<IMessageDispatcher>& responder)
@@ -92,43 +95,46 @@ void SubscriptionMessageListener::OnNextMessage(std::string message, const std::
     try
     {
         auto subscriptionMessage = m_apiObjectMapper->readFromString<oatpp::Object<GqlSubscriptionMessage>>(message);
-
+        if (subscriptionMessage->subscriptionId.get() == nullptr)
+            throw std::invalid_argument("unsubscribe message did not specify \"subscriptionId\", i.e. which subscription to unsubscribe from");
+        
         if (subscriptionMessage->messageName == "subscribe")
         {
             auto gqlRequest = m_apiObjectMapper->readFromString<oatpp::Object<GqlQueryRequest>>(subscriptionMessage->payload);
-            OATPP_LOGI(TAG, "subscribe request received with query=\"%s\"", gqlRequest->query->c_str());
+            OATPP_LOGI(TAG, "subscribe request received with id=\"%s\", query=\"%s\"", subscriptionMessage->subscriptionId->c_str(), gqlRequest->query->c_str());
 
             auto variables = m_apiObjectMapper->writeToString(gqlRequest->variables);
 
-            auto callbackSink = std::make_shared<SubscriptionCallbackSink>(responder, [weakResolver = std::weak_ptr(m_resolver)](const SubscriptionId& id)
+            auto callbackSink = std::make_shared<SubscriptionCallbackSink>(
+                  subscriptionMessage->subscriptionId->c_str()
+                , responder
+                , [weakResolver = std::weak_ptr(m_resolver)](const SubscriptionKey& id)
             {
                 auto resolver = weakResolver.lock();
                 if (resolver)
                     resolver->Unsubscribe(id);
             });
 
-            auto subscriptionId = m_resolver->Subscribe(  std::move(*(gqlRequest->query.get()))
+            auto subscriptionKey = m_resolver->Subscribe(  std::move(*(gqlRequest->query.get()))
                                                         , variables.get() == nullptr ? std::string("") : std::move(*(variables.get()))
                                                         , gqlRequest->operationName.get() == nullptr ? std::string ("") : std::move(*(gqlRequest->operationName.get()))
                                                         , std::move(callbackSink));
 
-            if (subscriptionId)
+            if (subscriptionKey)
             {
-                std::lock_guard<std::mutex> lock(m_activeSubscriptionIdsLock);
-                m_activeSubscriptionIds.emplace(*subscriptionId);
+                std::lock_guard<std::mutex> lock(m_activeSubscriptionsLock);
+                m_activeSubscriptions.emplace(std::move(*(subscriptionMessage->subscriptionId.get())), std::move(*subscriptionKey));
             }
         }
         else if (subscriptionMessage->messageName == "unsubscribe")
         {
-            if (subscriptionMessage->subscriptionId.get() == nullptr)
-                throw std::invalid_argument("unsubscribe message did not specify \"subscriptionId\", i.e. which subscription to unsubscribe from");
             OATPP_LOGI(TAG, "unsubscribe request received with subscriptionId=\"%s\"", subscriptionMessage->subscriptionId->c_str());
 
             m_resolver->Unsubscribe((*(subscriptionMessage->subscriptionId.get())));
 
             {
-                std::lock_guard<std::mutex> lock(m_activeSubscriptionIdsLock);
-                m_activeSubscriptionIds.erase(*(subscriptionMessage->subscriptionId.get()));
+                std::lock_guard<std::mutex> lock(m_activeSubscriptionsLock);
+                m_activeSubscriptions.erase(*(subscriptionMessage->subscriptionId.get()));
             }
         }
         else

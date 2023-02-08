@@ -84,7 +84,7 @@ std::shared_ptr<ResolveResult> MapiResolver::Resolve(std::string query, std::str
     return result;
 }
 
-std::shared_ptr<SubscriptionId> MapiResolver::Subscribe(
+std::shared_ptr<SubscriptionKey> MapiResolver::Subscribe(
       std::string query
     , std::string variables
     , std::string operationName
@@ -116,10 +116,10 @@ std::shared_ptr<SubscriptionId> MapiResolver::Subscribe(
                 std::move(queryParams->parsedVariables)
             }).get();
         
-        SubscriptionId id = std::to_string(subscriptionKey);
-        callbacks->OnRegistered(id);
+        SubscriptionKey key = std::to_string(subscriptionKey);
+        callbacks->OnRegistered(key);
 
-        return std::make_shared<SubscriptionId>(std::move(id));
+        return std::make_shared<SubscriptionKey>(std::move(key));
     }
     catch (std::exception e)
     {
@@ -129,10 +129,10 @@ std::shared_ptr<SubscriptionId> MapiResolver::Subscribe(
     }
 }
 
-void MapiResolver::Unsubscribe(const SubscriptionId& id)
+void MapiResolver::Unsubscribe(const SubscriptionKey& key)
 {
     service::SubscriptionKey subscriptionKey {};
-    auto [ptr, ec] { std::from_chars(id.data(), id.data() + id.size(), subscriptionKey) };
+    auto [ptr, ec] { std::from_chars(key.data(), key.data() + key.size(), subscriptionKey) };
 
     if (ec == std::errc())
     {
@@ -140,6 +140,6 @@ void MapiResolver::Unsubscribe(const SubscriptionId& id)
     }
     else
     {
-        throw std::runtime_error(std::format("Failed to convert the subscription id into necessary key type, id=\"{}\"", id));
+        throw std::runtime_error(std::format("Failed to convert the subscription key into necessary key type, key=\"{}\"", key));
     }
 }

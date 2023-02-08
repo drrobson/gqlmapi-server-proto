@@ -10,13 +10,16 @@
 
 struct ISubscriptionMessageDispatcher;
 
+using SubscriptionId = std::string;
+
 class SubscriptionCallbackSink : public ISubscriptionCallbacks
 {
 public:
-    SubscriptionCallbackSink( std::shared_ptr<IMessageDispatcher> messageChannel
-                            , std::function<void(const SubscriptionId&)> unsubscribeFunc);
+    SubscriptionCallbackSink( SubscriptionId subscriptionId
+                            , std::shared_ptr<IMessageDispatcher> messageChannel
+                            , std::function<void(const SubscriptionKey&)> unsubscribeFunc);
 
-    virtual void OnRegistered(const SubscriptionId& id) override;
+    virtual void OnRegistered(const SubscriptionKey& id) override;
     virtual void OnError(std::string errorMessage) override;
     virtual void OnNextResult(const std::shared_ptr<const ResolveResult>& result) override;
 
@@ -26,8 +29,9 @@ private:
     OATPP_COMPONENT(std::shared_ptr<oatpp::data::mapping::ObjectMapper>, m_apiObjectMapper);
 
     std::shared_ptr<IMessageDispatcher> m_messageChannel;
-    std::optional<SubscriptionId> m_subscriptionId;
-    std::function<void(const SubscriptionId&)> m_unsubscribeFunc;
+    SubscriptionId m_subscriptionId;
+    std::optional<SubscriptionKey> m_subscriptionKey;
+    std::function<void(const SubscriptionKey&)> m_unsubscribeFunc;
 };
 
 struct SubscriptionMessageListener : public IMessageListener
@@ -44,8 +48,8 @@ private:
     OATPP_COMPONENT(std::shared_ptr<oatpp::async::Executor>, m_asyncExecutor);
     
     std::shared_ptr<IResolver> m_resolver;
-    std::unordered_set<SubscriptionId> m_activeSubscriptionIds;
-    std::mutex m_activeSubscriptionIdsLock;
+    std::unordered_map<SubscriptionId, SubscriptionKey> m_activeSubscriptions;
+    std::mutex m_activeSubscriptionsLock;
 };
 
 struct SubscriptionMessageListenerFactory : public IMessageListenerFactory
