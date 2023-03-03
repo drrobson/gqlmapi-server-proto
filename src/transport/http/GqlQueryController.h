@@ -45,6 +45,9 @@ public:
 
         auto responseDto = executeQueryRequest(std::move(query), std::move(variables), std::move(operationName));
 
+        oatpp::String response = m_apiSerializationUtils->writeToString(responseDto);
+        OATPP_LOGD("[GET graphql] response=\"%s\"", response->c_str());
+
         return createDtoResponse(Status::CODE_200, responseDto);
     }
 
@@ -56,6 +59,9 @@ public:
         oatpp::String variables = m_apiSerializationUtils->writeToString(gqlRequest->variables);
 
         auto responseDto = executeQueryRequest(gqlRequest->query, variables, gqlRequest->operationName);
+
+        oatpp::String response = m_apiSerializationUtils->writeToString(responseDto);
+        OATPP_LOGD("[POST graphql] response=\"%s\"", response->c_str());
 
         return createDtoResponse(Status::CODE_200, responseDto);
     }
